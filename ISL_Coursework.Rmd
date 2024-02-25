@@ -1,0 +1,199 @@
+
+---
+title: "Coursework"
+output: pdf_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+The dataset I decided to analyse using multidimensional scaling is the daily temperature in 195 different countries around the world.
+
+I downloaded the dataset from Kaggle [Global Weather Dataset](https://www.kaggle.com/datasets/nelgiriyewithana/global-weather-repository) and the temperatures were measured from August 29 2023 as of me writing this.
+
+The reason I picked this dataset is because I want to compare it to the daily temperature here in the United Kingdom, as we are notorious for our perhaps not-so-sublime weather.
+
+Of course, we first need to read the data and extract what we care about. This means removing junk data like repeats and features we are uninterested in.
+
+Firstly, let us extract the `temperature_celcius` column for this.
+The vector of temperatures I will call $\boldsymbol{X}$ with components $X_i$ representing country $i$.
+Should be noted that the 195 countries are in alphabetical order.
+
+```{r}
+countries_data <- read.csv("GlobalWeatherRepository.csv")
+#Removing repeated data
+countries_data <- countries_data[0:195, ]
+```
+
+Will need to know the true value of the temperature of the United Kingdom. This came out to be $18^{\circ}$.
+
+```{r}
+uk_index <- which(countries_data[, 1] ==  "United Kingdom")
+celcius_index <- which(colnames(countries_data) == "temperature_celsius")
+uk_temp <- countries_data[uk_index, celcius_index]
+```
+Now we need to determine the dissimilarity matrix to analyse with. We will try two metrics in determining what the appropriate matrix will be. I will call these matrices $\boldsymbol{E}_1$ and $\boldsymbol{E}_2$. They will be defined as:
+
+$$
+\boldsymbol{E}_1 = (e^{(1)}_{ij}), \quad e^{(1)}_{ij} = (X_i - X_j)^2 
+$$
+$$
+\boldsymbol{E}_2 = (e^{(2)}_{ij}), \quad e^{(2)}_{ij} = |X_i - X_j|
+$$
+And for the analysis, we will need the inner product matrix $B$ which will be simply be $\boldsymbol{B} = \boldsymbol{XX}^T$. We will use this matrix to see if we can restore something similar to $\boldsymbol{X}$.
+
+
+```{r}
+X <- countries_data[, celcius_index]
+```
+
+```{r}
+n <- length(X)
+X_0 <- X - mean(X)
+B <- X_0 %*% t(X_0)
+E <- matrix(0, nrow = n, ncol = n)
+E_2 <- matrix(0, nrow = n, ncol = n)
+```
+
+```{r}
+for (i in 1:n) {
+  for (j in 1:n) {
+    E[i,j] <- B[i,i] + B[j,j] - 2*B[i,j]
+  }
+}
+```
+
+```{r}
+for (i in 1:n) {
+  for (j in 1:n) {
+    E_2[i,j] <- abs(X_0[i] - X_0[j])
+  }
+}
+```
+
+
+Now we attempt to recover $\boldsymbol{X} \in \mathbb{R}^n$ from our dissimilarity matrices.
+The idea is that we start with our dissimilarity matrix and attempt to recover a vector $\boldsymbol{Y}$ that similar to $\boldsymbol{X}$, however due to the construction of the dissimilarity matrices, the position and orientation of $\boldsymbol{X}$ in space cannot be recovered directly by only using $\boldsymbol{E}_1$ or $\boldsymbol{E}_2$.
+Nevertheless, we can immediately recover $\boldsymbol{Y}$ using the `cmdscale` function in R and the expression for $\boldsymbol{Y}$ is given as:
+
+$$
+\boldsymbol{Y} = (y_1, y_2, ...,y_{n})^T \in \mathbb{R}^{n} 
+\implies \boldsymbol{Y} = \sqrt{\lambda_j}v_{j}, \quad \mathrm{for\;some} \; j \in \{1,2,...,n\}
+$$
+where $\lambda_j$ is the $j^{th}$ eigenvalue of $\boldsymbol{B}$ and $v_j$ is the corresponding eigenvector to $\lambda_j$ with components $v_{ij}$. It's important to note that calculating $\boldsymbol{B}$ is calculated using the dissimilarity matrix, therefore its eigendecompostion is dependent on the dissimilarity matrix used, and hence the metric used to measure the dissimilarities.
+
+Additionally, because $\boldsymbol{Y}$ is a vector, it only has one column. Therefore we expect $\boldsymbol{B}$ to have only one eigenvector with a non-zero eigenvector.
+
+Now let's look at what happens when we start with $\boldsymbol{E}_1$.
+The eigenvalues of $\boldsymbol{B}$ directly determine the outcome of $\boldsymbol{Y}$ and the corresponding eigenvectors represent the axes of highest variance in the data. Therefore it is a good idea to look at the eigenvalues of $\boldsymbol{B}$ to see if we can modify $\boldsymbol{Y}$ dimensionally to remove potentially inconsequential factors in the dataset and reduce sparsity.
+
+Using the properties of the `cmdscale`, we can derive the eigenvalues of the matrix $\boldsymbol{B}$.
+
+I plotted both the eigenvalues of $\boldsymbol{B}$ and a transformation of the eigenvalues of the form:
+$$
+f(\lambda_i) = log(|\lambda_i| + 1)
+$$
+against the eigenvalue index (this is because the eigenvalues are monotonically decreasing with each index).
+
+Looking at `Figure 1`, we can see that $\boldsymbol{B}$ had three very large eigenvalues and the rest of the eigenvalues being near zero.
+
+Two of the three large eigenvalues was negative and other positive with all three having very large absolute values.
+This potentially implies that the metric used was unsuitable for the type of data. This is because $\boldsymbol{B}$ is the Gram matrix of $\boldsymbol{X}$ therefore should be positive semi-definite, which means $\lambda_i \ge0, \forall i\in \{1,2,...,n\}$, however we did not achieve that condition.
+
+Now let's look at what happens when we start with the dissimilarity matrix $\boldsymbol{E}_2$.
+
+I plotted the eigenvalues of $\boldsymbol{B}$, given we started with $\boldsymbol{E}_2$, in `Figure 3`.
+Looking at the eigenvalues of $\boldsymbol{B}$, there is only one non-zero eigenvalue which is also positive. Achieving both of what we expected (only one non-zero eigenvalue) and the condition required ($\lambda_j \ge0$)  for the metric used for $\boldsymbol{E}_2$ to be valid.
+
+Now we can evaluate $\boldsymbol{Y}$ and we can start comparing it to the original $\boldsymbol{X}$ vector.
+
+The mean squared error, ($MSE$), of $\boldsymbol{Y}$ and the original non-centralised $\boldsymbol{X}$ came out to be `812.987`, and the $MSE$ of $\boldsymbol{Y}$ and the centralised vector of $\boldsymbol{X}$, which I will denote as $\boldsymbol{X}_0$, was `190.702`.
+This significant drop in the mean squared error is expected because the calculation of $\boldsymbol{B}$, in `cmdscale`, assumed the data's centrality was at the origin of $\mathbb{R}^n$.
+
+The temperature of the United Kingdom in $\boldsymbol{Y}$ is `6.945641`. Suppose $\boldsymbol{X}$ is unknown to us. We can potentially get closer to $\boldsymbol{X}$ by measuring the average temperature of the UK in a particular day in a season (like Spring or Autumn) or we can take the average temperature of each temperature recorded at a random day of each season. Or we could simply take the temperature today and use it as the true value. There are many ways to achieve this and I started by taking the average temperature of today (22/02/24) which was $11^{\circ}$. 
+
+I will define the transformed $\boldsymbol{Y}$ to be:
+$$
+\boldsymbol{Y}(k) = \boldsymbol{Y} - \bar{\boldsymbol{Y}} + k\boldsymbol{1}_n
+$$
+where $\bar{\boldsymbol{Y}}$ is the mean of $\boldsymbol{Y}$ and $\boldsymbol{1}_n$ is the vector of ones in $\mathbb{R}^n$.
+
+The mean squared error of $\boldsymbol{Y}(11)$ is `627.1477` which is still a significant improvement of almost $25$%.
+
+Now let's use the average temperature of the UK in the summer throughout 2023. The reason being is that the data is from August of 2023. The value is `15.35`. The mean squared error of $\boldsymbol{Y}(15.35)$ is `464.316` which again is another significant improvement. This leads to us asking ourselves which value of $k$ minimises the error.
+
+In `Figure 4`, I plotted the value of mean squared errors at different values of $k$. Using inspection we can make the assumption that we have a minimum between $25$ and $35$ and this the only minimum for all values of $k$.
+
+Using `which.min`, the value of $k$ that minimises the error is $32$. This is significantly greater than the true value of `18`. 
+
+This can occur because of the temperature value of other countries. By subtracting the mean and adding the same value across each component, the assumption is being made that each component of $\boldsymbol{Y}$ differs in position $\boldsymbol{X}$ linearly, which is quite naive. 
+
+```{r}
+temp_dists <- as.dist(E)
+tempscalesoln <- cmdscale(temp_dists, k = 10, eig = TRUE)
+temp_dists_eig <- tempscalesoln$eig
+temp_dists_eig_log <- log(abs(temp_dists_eig)+1)
+n = length(temp_dists_eig)
+m = min(abs(temp_dists_eig[c(1,n-1, n)]))
+```
+
+```{r}
+par(mfrow = c(1, 2))
+
+plot(1:length(temp_dists_eig), temp_dists_eig, type = 'l', xlab = 'Eigenvalue Index', ylab = 'Eigenvalue', col = 'red')
+points(1:length(temp_dists_eig), temp_dists_eig, col = 'blue')
+title('Eigenvalues of B given E_1')
+mtext('Figure 1', side = 1, line = 4)
+
+par(mfrow = c(1, 1))
+```
+
+```{r}
+temp_dists_2 <- as.dist(E_2)
+tempscalesoln_2 <- cmdscale(temp_dists_2, k = 10, eig = TRUE)
+temp_dists_eig_2 <- tempscalesoln_2$eig
+temp_dists_eig_log_2 <- log(abs(temp_dists_eig_2)+1)
+```
+
+```{r}
+par(mfrow = c(1, 2))
+
+plot(1:length(temp_dists_eig_2), temp_dists_eig_2, type = 'l', xlab = 'Eigenvalue Index', ylab = 'Eigenvalue', col = 'red') 
+points(1:length(temp_dists_eig_2), temp_dists_eig_2, col = 'blue')
+title('Eigenvalues of B given E_2')
+mtext('Figure 2', side = 1, line = 4)
+
+plot(1:length(temp_dists_eig_log_2), temp_dists_eig_log_2, type = 'l', xlab = 'Eigenvalue Index', ylab = 'Eigenvalue', col = 'red')
+points(1:length(temp_dists_eig_log_2), temp_dists_eig_log_2, col = 'blue')
+title('Log Abs of the Eigenvalues')
+mtext('Figure 3', side = 1, line = 4)
+
+par(mfrow = c(1, 1))
+
+```
+
+```{r}
+Y <- tempscalesoln_2$points[,1] 
+
+N = 100
+
+mses = numeric(N)
+
+for (i in 1:N) {
+  Y_new <- Y + i - Y[uk_index]
+  mses[i] <- mean((X- Y_new)^2)
+}
+
+argmin_k <- which.min(mses) # = 32
+
+plot(1:N, mses, xlab = 'k', ylab = 'Y(k)')
+abline(v = 32, col = 'red')
+title('Plot of MSEs of Y(k)')
+mtext('Figure 4', side = 1, line = 4)
+```
+
+```{r}
+file.show("ISL_Coursework.pdf")
+```
